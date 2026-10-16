@@ -1,36 +1,24 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# やることリスト（Next.js）
 
-## Getting Started
+タスクの追加・完了マーク・削除ができる ToDo リストです。データはブラウザの localStorage に保存されるので、ブラウザを閉じても残ります。
 
-First, run the development server:
+## 使い方
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # 本番ビルド
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 構成
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `src/lib/todoStore.ts` … localStorage への保存。`useSyncExternalStore` で読むので、サーバー描画とのずれ（hydration エラー）が起きず、別のタブの変更にも追従する
+- `src/components/TodoApp.tsx` … 画面
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## UI/UX で気をつけたこと
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **読みやすさ** … 本文は 16〜18px、文字と背景のコントラストを十分にとる。ダークモードにも対応。長いタスク名は折り返す
+2. **押しやすさ** … ボタン・チェックボックスの押せる範囲を 44px 以上にし、タスク名をタップしても完了にできる
+3. **操作の手応え** … 空のときは「追加」を押せない、追加後は入力欄にフォーカスが戻る、残り件数・各絞り込みの件数を表示
+4. **取り返しがつく** … 削除のあと「元に戻す」を数秒表示する（確認ダイアログで手を止めさせない）
+5. **迷わせない** … ラベルを常に表示、空の状態では次にすることを案内、キーボードと読み上げ（aria-live / aria-label）にも対応
