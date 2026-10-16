@@ -34,6 +34,12 @@ describe("applyOp", () => {
     expect(restored.map((t) => t.id)).toEqual(["a", "b", "c", "d"]);
   });
 
+  it("大きな位置で戻すと、元の順番のまま末尾に入る（ブラウザのリストを移すとき）", () => {
+    const items = [todo("x", true), todo("y")].map((t, i) => ({ todo: t, index: 1_000_000_000 + i }));
+    const result = applyOp([todo("a"), todo("b")], { type: "restore", items });
+    expect(result.map((t) => [t.id, t.done])).toEqual([["a", false], ["b", false], ["x", true], ["y", false]]);
+  });
+
   it("すでにあるものは元に戻しても二重にならない", () => {
     const list = [todo("a")];
     const restored = applyOp(list, { type: "restore", items: [{ todo: todo("a"), index: 0 }] });

@@ -1,7 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { getLinkedToken, getServerLinkedToken, subscribeLinkedToken } from "@/lib/linkedToken";
 import { collectRemoved, MAX_TITLE, type RemovedItem, type Todo } from "@/lib/todoOps";
 import { useTodoList } from "@/lib/useTodoList";
 
@@ -23,8 +24,11 @@ type Props = {
 };
 
 export default function TodoApp({ lineAddUrl }: Props) {
-  // LINE 連携のリストのトークン（?l=）。なければこのブラウザに保存する
-  const token = useSearchParams().get("l") || null;
+  // LINE 連携のリストのトークン。リンク（?l=）になければ、前に開いたときに覚えたものを使う。
+  // どちらもなければこのブラウザに保存する
+  const urlToken = useSearchParams().get("l") || null;
+  const savedToken = useSyncExternalStore(subscribeLinkedToken, getLinkedToken, getServerLinkedToken);
+  const token = urlToken ?? savedToken;
   const { todos, error, apply, reload } = useTodoList(token);
   const [title, setTitle] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -245,7 +249,7 @@ function Shell({ token, lineAddUrl, error, onReload, children }: ShellProps) {
         {token ? (
           <>
             <span className="mr-2 inline-block rounded bg-green-700 px-2 text-sm font-bold text-white">LINE 連携</span>
-            LINE で送ったやることもここに入ります。このページをブックマークしておくと便利です。
+            LINE で送ったやることと同じリストです。このブラウザでは、次からリンクなしで開いてもこのリストが出ます。
           </>
         ) : (
           <>

@@ -14,7 +14,11 @@ npm test         # テスト（Vitest）
 ## LINE から追加する
 
 LINE の公式アカウントに送った文が、1 行 1 件のやることとして追加されます。「一覧」と送ると未完了のものを返します。
-返事に載っている `?l=トークン` 付きのリンクを開くと、LINE で追加したリストを画面で見て、完了や削除ができます（リンクなしで開いたときは、今までどおりこのブラウザに保存）。
+返事に載っている `?l=トークン` 付きのリンクを開くと、LINE で追加したリストを画面で見て、完了や削除ができます。
+
+- 一度リンクで開いたブラウザはトークンを覚えるので、次からはリンクなしで開いても LINE のリストが出る（`src/lib/linkedToken.ts`）
+- そのとき、ブラウザだけに保存していたやることは LINE のリストの末尾に移して、リストを 1 つにまとめる。移せたときだけブラウザ側を消す
+- LINE のリンクで開いたことがないブラウザでは、今までどおりブラウザに保存する
 
 - LINE の利用者ごとにリストを作る。リストは秘密のトークンで見分け、Redis にはトークンのハッシュをキーにして保存する
 - グループでは全員の発言が追加されてしまうので、1 対 1 のトークだけで使う
@@ -34,7 +38,7 @@ LINE Developers の Webhook URL は `https://<公開 URL>/api/line/webhook`。
 
 - `src/lib/todoOps.ts` … やることの型とリストへの操作（追加・完了・削除・元に戻す）。画面とサーバーの両方で使う
 - `src/lib/todoStore.ts` … localStorage への保存。`useSyncExternalStore` で読むので、サーバー描画とのずれ（hydration エラー）が起きず、別のタブの変更にも追従する
-- `src/lib/useTodoList.ts` … `?l=` があればサーバー、なければ localStorage を使い分ける
+- `src/lib/useTodoList.ts` … LINE のトークン（`?l=` か覚えたもの）があればサーバー、なければ localStorage を使い分ける
 - `src/lib/server/lists.ts` … Redis への保存
 - `src/lib/server/line.ts` / `src/app/api/line/webhook/route.ts` … LINE の Webhook
 - `src/app/api/todos/route.ts` … 画面から LINE 連携のリストを読み書きする API
