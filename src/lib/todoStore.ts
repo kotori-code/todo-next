@@ -1,12 +1,7 @@
 // やることを localStorage に保存する小さなストア。
 // useSyncExternalStore から使うので、読み書きのたびに購読者へ知らせる。
 
-export type Todo = {
-  id: string;
-  title: string;
-  done: boolean;
-  createdAt: number;
-};
+import { isTodo, type Todo } from "./todoOps";
 
 const STORAGE_KEY = "todo-next:todos";
 
@@ -30,12 +25,7 @@ function parse(raw: string | null): Todo[] {
   try {
     const value: unknown = JSON.parse(raw);
     if (!Array.isArray(value)) return [];
-    return value.filter(
-      (t): t is Todo =>
-        typeof t?.id === "string" &&
-        typeof t?.title === "string" &&
-        typeof t?.done === "boolean",
-    );
+    return value.filter(isTodo);
   } catch {
     return [];
   }
@@ -80,10 +70,4 @@ export function saveTodos(todos: Todo[]): void {
     memoryTodos = todos;
   }
   listeners.forEach((l) => l());
-}
-
-export function newId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

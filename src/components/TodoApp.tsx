@@ -1,14 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import {
-  getServerSnapshot,
-  getSnapshot,
-  newId,
-  saveTodos,
-  subscribe,
-  type Todo,
-} from "@/lib/todoStore";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useId, useRef, useState } from "react";
+import { collectRemoved, MAX_TITLE, type RemovedItem, type Todo } from "@/lib/todoOps";
+import { useTodoList } from "@/lib/useTodoList";
 
 type Filter = "all" | "active" | "done";
 
@@ -18,14 +13,19 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "done", label: "完了" },
 ];
 
-const MAX_TITLE = 100;
 const UNDO_MS = 6000;
 
-// 削除した項目と元の位置。「元に戻す」で同じ場所に戻す
-type Removed = { message: string; items: { todo: Todo; index: number }[] };
+type Removed = { message: string; items: RemovedItem[] };
 
-export default function TodoApp() {
-  const todos = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+type Props = {
+  // LINE の友だち追加の URL。あれば画面に案内を出す
+  lineAddUrl: string | null;
+};
+
+export default function TodoApp({ lineAddUrl }: Props) {
+  // LINE 連携のリストのトークン（?l=）。なければこのブラウザに保存する
+  const token = useSearchParams().get("l") || null;
+  const { todos, error, apply, reload } = useTodoList(token);
   const [title, setTitle] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [removed, setRemoved] = useState<Removed | null>(null);
@@ -40,8 +40,14 @@ export default function TodoApp() {
     return () => clearTimeout(timer);
   }, [removed]);
 
+  const shellProps = { token, lineAddUrl, error, onReload: reload };
+
   if (todos === null) {
-    return <Shell><p className="py-12 text-center text-slate-600 dark:text-slate-300">読み込み中…</p></Shell>;
+    return (
+      <Shell {...shellProps}>
+        {!error && <p className="py-12 text-center text-slate-600 dark:text-slate-300">読み込み中…</p>}
+      </Shell>
+    );
   }
 
   const activeCount = todos.filter((t) => !t.done).length;
@@ -54,10 +60,7 @@ export default function TodoApp() {
   function add(e: React.FormEvent) {
     e.preventDefault();
     if (!trimmed) return;
-    saveTodos([
-      { id: newId(), title: trimmed, done: false, createdAt: Date.now() },
-      ...todos!,
-    ]);
+    apply({ type: "add", titles: [trimmed] });
     setTitle("");
     setAnnounce(`「${trimmed}」を追加しました`);
     // 続けて入力できるように入力欄に戻す
@@ -69,34 +72,28 @@ export default function TodoApp() {
   function toggle(id: string) {
     const target = todos!.find((t) => t.id === id);
     if (!target) return;
-    saveTodos(todos!.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+    apply({ type: "toggle", id });
     setAnnounce(`「${target.title}」を${target.done ? "未完了に戻しました" : "完了にしました"}`);
   }
 
   function removeWhere(pred: (t: Todo) => boolean, message: string) {
-    const items = todos!
-      .map((todo, index) => ({ todo, index }))
-      .filter(({ todo }) => pred(todo));
-    if (items.length === 0) return;
-    saveTodos(todos!.filter((t) => !pred(t)));
+    const ids = todos!.filter(pred).map((t) => t.id);
+    if (ids.length === 0) return;
+    const items = collectRemoved(todos!, ids);
+    apply({ type: "remove", ids });
     setRemoved({ message, items });
     setAnnounce(`${message}。元に戻すこともできます`);
   }
 
   function undo() {
     if (!removed) return;
-    const next = [...todos!];
-    // 元の位置の小さい順に差し込めば、もとの並びに戻る
-    for (const { todo, index } of removed.items) {
-      next.splice(Math.min(index, next.length), 0, todo);
-    }
-    saveTodos(next);
+    apply({ type: "restore", items: removed.items });
     setRemoved(null);
     setAnnounce("元に戻しました");
   }
 
   return (
-    <Shell>
+    <Shell {...shellProps}>
       <form onSubmit={add} className="flex flex-col gap-2">
         <label htmlFor={inputId} className="text-base font-semibold">
           新しいやること
@@ -221,13 +218,55 @@ export default function TodoApp() {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+type ShellProps = {
+  token: string | null;
+  lineAddUrl: string | null;
+  error: string | null;
+  onReload: () => void;
+  children: React.ReactNode;
+};
+
+function Shell({ token, lineAddUrl, error, onReload, children }: ShellProps) {
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-28 pt-10">
-      <h1 className="mb-1 text-3xl font-bold">やることリスト</h1>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-3xl font-bold">やることリスト</h1>
+        {token && (
+          <button
+            type="button"
+            onClick={onReload}
+            className="min-h-11 rounded-lg border-2 border-slate-400 px-3 text-base font-semibold hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-300 dark:border-slate-500 dark:hover:bg-slate-800"
+          >
+            最新にする
+          </button>
+        )}
+      </div>
       <p className="mb-8 text-base text-slate-600 dark:text-slate-300">
-        このブラウザに保存されるので、閉じても消えません。
+        {token ? (
+          <>
+            <span className="mr-2 inline-block rounded bg-green-700 px-2 text-sm font-bold text-white">LINE 連携</span>
+            LINE で送ったやることもここに入ります。このページをブックマークしておくと便利です。
+          </>
+        ) : (
+          <>
+            このブラウザに保存されるので、閉じても消えません。
+            {lineAddUrl && (
+              <>
+                {" "}
+                <a href={lineAddUrl} className="font-semibold text-blue-800 underline underline-offset-4 dark:text-blue-300">
+                  LINE から追加する
+                </a>
+                （友だち追加すると、LINE 用のリストのリンクが届きます）
+              </>
+            )}
+          </>
+        )}
       </p>
+      {error && (
+        <p role="alert" className="mb-6 rounded-lg border-2 border-red-700 bg-red-50 px-4 py-3 text-base text-red-900 dark:border-red-400 dark:bg-red-950 dark:text-red-100">
+          {error}
+        </p>
+      )}
       {children}
     </main>
   );

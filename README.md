@@ -8,11 +8,36 @@
 npm install
 npm run dev      # http://localhost:3000
 npm run build    # 本番ビルド
+npm test         # テスト（Vitest）
 ```
+
+## LINE から追加する
+
+LINE の公式アカウントに送った文が、1 行 1 件のやることとして追加されます。「一覧」と送ると未完了のものを返します。
+返事に載っている `?l=トークン` 付きのリンクを開くと、LINE で追加したリストを画面で見て、完了や削除ができます（リンクなしで開いたときは、今までどおりこのブラウザに保存）。
+
+- LINE の利用者ごとにリストを作る。リストは秘密のトークンで見分け、Redis にはトークンのハッシュをキーにして保存する
+- グループでは全員の発言が追加されてしまうので、1 対 1 のトークだけで使う
+
+### 設定（環境変数）
+
+| 名前 | 内容 |
+| --- | --- |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Upstash Redis（Vercel の Storage からつなぐと自動で入る） |
+| `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developers の Messaging API チャネル |
+| `NEXT_PUBLIC_LINE_ADD_URL` | （任意）友だち追加の URL。画面に案内を出す |
+
+LINE Developers の Webhook URL は `https://<公開 URL>/api/line/webhook`。
+開発中は Redis がなければメモリに保存し、LINE への返事の文をログに出す。
 
 ## 構成
 
+- `src/lib/todoOps.ts` … やることの型とリストへの操作（追加・完了・削除・元に戻す）。画面とサーバーの両方で使う
 - `src/lib/todoStore.ts` … localStorage への保存。`useSyncExternalStore` で読むので、サーバー描画とのずれ（hydration エラー）が起きず、別のタブの変更にも追従する
+- `src/lib/useTodoList.ts` … `?l=` があればサーバー、なければ localStorage を使い分ける
+- `src/lib/server/lists.ts` … Redis への保存
+- `src/lib/server/line.ts` / `src/app/api/line/webhook/route.ts` … LINE の Webhook
+- `src/app/api/todos/route.ts` … 画面から LINE 連携のリストを読み書きする API
 - `src/components/TodoApp.tsx` … 画面
 
 ## UI/UX で気をつけたこと
