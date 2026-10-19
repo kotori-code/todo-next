@@ -49,6 +49,16 @@ describe("applyOp", () => {
     expect(result.map((t) => [t.id, t.done])).toEqual([["a", false], ["b", false], ["x", true], ["y", false]]);
   });
 
+  it("隣の項目を目印にして並び替える", () => {
+    const list = [todo("a"), todo("b"), todo("c"), todo("d")];
+    const ids = (op: Parameters<typeof applyOp>[1]) => applyOp(list, op).map((t) => t.id);
+    expect(ids({ type: "move", id: "d", beforeId: "b" })).toEqual(["a", "d", "b", "c"]);
+    expect(ids({ type: "move", id: "a", afterId: "c" })).toEqual(["b", "c", "a", "d"]);
+    expect(ids({ type: "move", id: "b", afterId: "d" })).toEqual(["a", "c", "d", "b"]);
+    // 目印が消えていたら何もしない
+    expect(ids({ type: "move", id: "a", beforeId: "zz" })).toEqual(["a", "b", "c", "d"]);
+  });
+
   it("すでにあるものは元に戻しても二重にならない", () => {
     const list = [todo("a")];
     const restored = applyOp(list, { type: "restore", items: [{ todo: todo("a"), index: 0 }] });
@@ -63,6 +73,9 @@ describe("isTodoOp", () => {
     expect(isTodoOp({ type: "add", items: [{ title: 1 }] })).toBe(false);
     expect(isTodoOp({ type: "add", items: [{ title: "a", due: "2026-02-30" }] })).toBe(false);
     expect(isTodoOp({ type: "drop" })).toBe(false);
+    expect(isTodoOp({ type: "move", id: "a", beforeId: "b" })).toBe(true);
+    expect(isTodoOp({ type: "move", id: "a" })).toBe(false);
+    expect(isTodoOp({ type: "move", id: "a", beforeId: "b", afterId: "c" })).toBe(false);
     expect(isTodoOp({ type: "restore", items: [{ todo: { id: "x" }, index: 0 }] })).toBe(false);
     expect(isTodoOp(null)).toBe(false);
   });

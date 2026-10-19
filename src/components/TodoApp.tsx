@@ -1,8 +1,22 @@
 "use client";
 
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type Announcements,
+  type DragEndEvent,
+  type Modifier,
+} from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { formatDue, todayInJapan } from "@/lib/due";
+import SortableTodo from "@/components/SortableTodo";
+import { formatDue } from "@/lib/due";
 import { getLinkedToken, getServerLinkedToken, subscribeLinkedToken } from "@/lib/linkedToken";
 import { collectRemoved, MAX_TITLE, type RemovedItem, type Todo } from "@/lib/todoOps";
 import { useTodoList } from "@/lib/useTodoList";
@@ -16,6 +30,20 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 const UNDO_MS = 6000;
+
+// 並び替えは縦にだけ動かす
+const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+// 並び替えの読み上げ（dnd-kit の既定は英語なので日本語にする）
+const screenReaderInstructions = {
+  draggable: "スペースキーで持ち上げ、上下の矢印キーで動かし、もう一度スペースキーで置きます。Esc キーで取りやめます。",
+};
+const announcements: Announcements = {
+  onDragStart: () => "持ち上げました",
+  onDragOver: ({ over }) => (over ? "移動しています" : undefined),
+  onDragEnd: ({ over }) => (over ? "置きました" : "元の場所に戻しました"),
+  onDragCancel: () => "並び替えを取りやめました",
+};
 
 type Removed = { message: string; items: RemovedItem[] };
 
@@ -41,6 +69,16 @@ export default function TodoApp({ lineAddUrl }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const dueId = useId();
+  const dndId = useId();
+  // ドラッグを終えた直後のクリックでチェックが切り替わらないようにする
+  const justDragged = useRef(false);
+  const sensors = useSensors(
+    // パソコン: 少し動かしたらドラッグ（クリックだけならチェック）
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    // スマホ: 長押ししてから動かす（すぐ動かせばスクロール）
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // 「元に戻す」は一定時間で消す
   useEffect(() => {
@@ -85,6 +123,30 @@ export default function TodoApp({ lineAddUrl }: Props) {
     apply({ type: "toggle", id });
     setGlowId(target.done ? null : id);
     setAnnounce(`「${target.title}」を${target.done ? "未完了に戻しました" : "完了にしました"}`);
+  }
+
+  function dragEnd({ active, over }: DragEndEvent) {
+    justDragged.current = true;
+    setTimeout(() => {
+      justDragged.current = false;
+    }, 0);
+    if (!over || active.id === over.id) return;
+    const from = visible.findIndex((t) => t.id === active.id);
+    const to = visible.findIndex((t) => t.id === over.id);
+    if (from === -1 || to === -1) return;
+    // 絞り込み中は見えている項目だけで動くので、置いた場所の隣の項目を目印にする
+    const moved = arrayMove(visible, from, to);
+    const id = String(active.id);
+    const target = visible[from];
+    if (moved[to + 1]) apply({ type: "move", id, beforeId: moved[to + 1].id });
+    else apply({ type: "move", id, afterId: moved[to - 1].id });
+    setAnnounce(`「${target.title}」を ${to + 1} 番目に動かしました`);
+  }
+
+  function swallowClickAfterDrag(e: React.MouseEvent) {
+    if (!justDragged.current) return;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   function removeWhere(pred: (t: Todo) => boolean, message: string) {
@@ -181,52 +243,38 @@ export default function TodoApp({ lineAddUrl }: Props) {
       {visible.length === 0 ? (
         <EmptyState filter={filter} total={todos.length} />
       ) : (
-        <ul className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-300 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900">
-          {visible.map((todo) => (
-            <li
-              key={todo.id}
-              className={`flex items-center gap-2 px-2 ${todo.done ? "bg-slate-200 dark:bg-slate-800" : ""}`}
+        <DndContext
+          id={dndId}
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[verticalOnly]}
+          accessibility={{ announcements, screenReaderInstructions }}
+          onDragEnd={dragEnd}
+        >
+          <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            <ul
+              onClickCapture={swallowClickAfterDrag}
+              className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900"
             >
-              <label
-                className={`flex min-h-14 flex-1 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 ${
-                  todo.done ? "hover:bg-slate-300 dark:hover:bg-slate-700" : "hover:bg-slate-50 dark:hover:bg-slate-800"
-                }`}
-              >
-                <span
-                  className={`grid shrink-0 place-items-center rounded-md ${glowId === todo.id ? "check-glow" : ""}`}
-                  onAnimationEnd={() => setGlowId(null)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={todo.done}
-                    onChange={() => toggle(todo.id)}
-                    className={`size-6 cursor-pointer ${todo.done ? "accent-slate-500" : "accent-blue-700"}`}
-                  />
-                </span>
-                <span className="flex min-w-0 flex-col">
-                  <span
-                    className={`break-words text-lg [overflow-wrap:anywhere] ${
-                      todo.done
-                        ? "text-slate-500 line-through dark:text-slate-400"
-                        : "text-slate-900 dark:text-slate-50"
-                    }`}
-                  >
-                    {todo.title}
-                  </span>
-                  {todo.due && <DueLabel due={todo.due} done={todo.done} />}
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={() => removeWhere((t) => t.id === todo.id, `「${todo.title}」を削除しました`)}
-                aria-label={`「${todo.title}」を削除`}
-                className="min-h-11 shrink-0 rounded-lg px-3 text-base font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200 dark:text-red-300 dark:hover:bg-red-950"
-              >
-                削除
-              </button>
-            </li>
-          ))}
-        </ul>
+              {visible.map((todo) => (
+                <SortableTodo
+                  key={todo.id}
+                  todo={todo}
+                  glowing={glowId === todo.id}
+                  onToggle={() => toggle(todo.id)}
+                  onRemove={() => removeWhere((t) => t.id === todo.id, `「${todo.title}」を削除しました`)}
+                  onGlowEnd={() => setGlowId(null)}
+                />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      {visible.length > 1 && (
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          ドラッグ（スマホは長押し）で並び替えられます
+        </p>
       )}
 
       <p className="mt-4 text-base text-slate-700 dark:text-slate-300">
@@ -307,24 +355,6 @@ function Shell({ token, lineAddUrl, error, onReload, children }: ShellProps) {
       )}
       {children}
     </main>
-  );
-}
-
-function DueLabel({ due, done }: { due: string; done: boolean }) {
-  const overdue = !done && due < todayInJapan();
-  return (
-    <span
-      className={`text-sm ${
-        done
-          ? "text-slate-500 dark:text-slate-400"
-          : overdue
-            ? "font-semibold text-red-800 dark:text-red-300"
-            : "text-slate-600 dark:text-slate-300"
-      }`}
-    >
-      期限 {formatDue(due)}
-      {overdue && "・過ぎています"}
-    </span>
   );
 }
 

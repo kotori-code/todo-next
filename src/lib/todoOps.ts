@@ -21,6 +21,9 @@ export type TodoOp =
   | { type: "add"; items: NewTodo[] }
   | { type: "toggle"; id: string }
   | { type: "remove"; ids: string[] }
+  // id を beforeId の前、または afterId の後ろに動かす。
+  // 位置の番号でなく隣の項目で指すので、その間に LINE から追加されても狙った場所に入る
+  | { type: "move"; id: string; beforeId?: string; afterId?: string }
   | { type: "restore"; items: RemovedItem[] };
 
 export const MAX_TITLE = 100;
@@ -67,6 +70,11 @@ export function isTodoOp(value: unknown): value is TodoOp {
       return typeof op.id === "string";
     case "remove":
       return isStrings(op.ids);
+    case "move":
+      return (
+        typeof op.id === "string" &&
+        (typeof op.beforeId === "string") !== (typeof op.afterId === "string")
+      );
     case "restore":
       return (
         Array.isArray(op.items) &&
@@ -101,6 +109,15 @@ export function applyOp(todos: Todo[], op: TodoOp, now = Date.now()): Todo[] {
     case "remove": {
       const ids = new Set(op.ids);
       return todos.filter((t) => !ids.has(t.id));
+    }
+    case "move": {
+      const moving = todos.find((t) => t.id === op.id);
+      const rest = todos.filter((t) => t.id !== op.id);
+      const ref = rest.findIndex((t) => t.id === (op.beforeId ?? op.afterId));
+      // 動かすものか目印がもう消えていたら何もしない
+      if (!moving || ref === -1) return todos;
+      rest.splice(op.beforeId !== undefined ? ref : ref + 1, 0, moving);
+      return rest;
     }
     case "restore": {
       const next = [...todos];
