@@ -2,6 +2,7 @@
 // 1 行が 1 件。「一覧」「使い方」だけは命令として扱う。
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { formatDue, parseLeadingDue, todayInJapan } from "@/lib/due";
 import { MAX_ADD, type Todo } from "@/lib/todoOps";
 import { getOrCreateLineToken, getStore, readList, updateList, type KeyValueStore } from "./lists";
 
@@ -12,6 +13,10 @@ export type LineConfig = {
   appUrl: string;
   fetch?: typeof fetch;
   store?: KeyValueStore;
+  // リストが変わったときに呼ぶ（カレンダーへの反映）
+  onListChange?: (token: string, prev: Todo[], next: Todo[]) => void;
+  // テスト用。日本時間の今日（"2026-10-19"）
+  today?: string;
 };
 
 type LineEvent = {
@@ -41,6 +46,7 @@ export function helpText(url: string): string {
   return [
     "やることを送ると、リストに追加します。",
     "・1 行に 1 件。改行すると何件でもまとめて追加できます（1 回に 20 件まで）",
+    "・「10/25 歯医者」のように頭に日付を書くと期限になります",
     "・「一覧」と送ると、まだ終わっていないものを返します",
     "",
     "完了のチェックや削除は、こちらのページで行えます。",
@@ -51,7 +57,7 @@ export function helpText(url: string): string {
 function formatList(todos: Todo[], url: string): string {
   const active = todos.filter((t) => !t.done);
   if (active.length === 0) return `まだ終わっていないやることはありません。\n\n${url}`;
-  const lines = active.slice(0, MAX_LIST).map((t, i) => `${i + 1}. ${t.title}`);
+  const lines = active.slice(0, MAX_LIST).map((t, i) => `${i + 1}. ${t.title}${t.due ? `（${formatDue(t.due)}）` : ""}`);
   if (active.length > MAX_LIST) lines.push(`…ほか ${active.length - MAX_LIST} 件`);
   return `未完了 ${active.length} 件\n${lines.join("\n")}\n\n${url}`;
 }
@@ -80,19 +86,23 @@ export async function replyFor(event: LineEvent, config: LineConfig): Promise<st
     return helpText(url);
   }
 
-  const titles = text
+  const today = config.today ?? todayInJapan();
+  const items = text
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*(?:[-・*•]|\d+[.)．])\s*/, "").trim())
-    .filter(Boolean);
-  if (titles.length === 0) return null;
-  const todos = (await updateList(token, { type: "add", titles }, store)) ?? [];
-  const added = titles.slice(0, MAX_ADD);
+    .filter(Boolean)
+    .map((line) => parseLeadingDue(line, today));
+  if (items.length === 0) return null;
+  const result = await updateList(token, { type: "add", items }, store);
+  if (result) config.onListChange?.(token, result.prev, result.next);
+  const todos = result?.next ?? [];
+  const added = items.slice(0, MAX_ADD);
   const active = todos.filter((t) => !t.done).length;
   const lines = [
     `${added.length} 件追加しました`,
-    ...added.map((t) => `・${t.slice(0, 100)}`),
+    ...added.map((t) => `・${t.title.slice(0, 100)}${t.due ? `（期限 ${formatDue(t.due)}）` : ""}`),
   ];
-  if (titles.length > MAX_ADD) lines.push(`（${MAX_ADD} 件を超えた分は追加していません）`);
+  if (items.length > MAX_ADD) lines.push(`（${MAX_ADD} 件を超えた分は追加していません）`);
   lines.push("", `未完了 ${active} 件`, url);
   return lines.join("\n");
 }

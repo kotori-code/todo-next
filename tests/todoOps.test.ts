@@ -5,18 +5,27 @@ const todo = (id: string, done = false): Todo => ({ id, title: id, done, created
 
 describe("applyOp", () => {
   it("追加すると送った順に上から並ぶ", () => {
-    const result = applyOp([todo("a")], { type: "add", titles: ["牛乳", " 卵 ", ""] });
+    const result = applyOp([todo("a")], {
+      type: "add",
+      items: [{ title: "牛乳" }, { title: " 卵 " }, { title: "" }],
+    });
     expect(result.map((t) => t.title)).toEqual(["牛乳", "卵", "a"]);
   });
 
   it("長すぎるタスク名は 100 文字で切る", () => {
-    const [added] = applyOp([], { type: "add", titles: ["あ".repeat(150)] });
+    const [added] = applyOp([], { type: "add", items: [{ title: "あ".repeat(150) }] });
     expect(added.title).toHaveLength(100);
   });
 
   it("一度に追加できるのは 20 件まで", () => {
-    const titles = Array.from({ length: 25 }, (_, i) => `t${i}`);
-    expect(applyOp([], { type: "add", titles })).toHaveLength(20);
+    const items = Array.from({ length: 25 }, (_, i) => ({ title: `t${i}` }));
+    expect(applyOp([], { type: "add", items })).toHaveLength(20);
+  });
+
+  it("期限を付けて追加できる。期限がなければキーを入れない", () => {
+    const [a, b] = applyOp([], { type: "add", items: [{ title: "歯医者", due: "2026-10-25" }, { title: "牛乳" }] });
+    expect(a.due).toBe("2026-10-25");
+    expect("due" in b).toBe(false);
   });
 
   it("完了を切り替えられる", () => {
@@ -49,8 +58,10 @@ describe("applyOp", () => {
 
 describe("isTodoOp", () => {
   it("正しくない形の操作を受け付けない", () => {
-    expect(isTodoOp({ type: "add", titles: ["a"] })).toBe(true);
-    expect(isTodoOp({ type: "add", titles: [1] })).toBe(false);
+    expect(isTodoOp({ type: "add", items: [{ title: "a" }] })).toBe(true);
+    expect(isTodoOp({ type: "add", items: [{ title: "a", due: "2026-10-25" }] })).toBe(true);
+    expect(isTodoOp({ type: "add", items: [{ title: 1 }] })).toBe(false);
+    expect(isTodoOp({ type: "add", items: [{ title: "a", due: "2026-02-30" }] })).toBe(false);
     expect(isTodoOp({ type: "drop" })).toBe(false);
     expect(isTodoOp({ type: "restore", items: [{ todo: { id: "x" }, index: 0 }] })).toBe(false);
     expect(isTodoOp(null)).toBe(false);

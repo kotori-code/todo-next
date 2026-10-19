@@ -1,6 +1,7 @@
 // LINE 連携のリストを画面から読み書きする API。
 // トークンは URL に残らないようにヘッダー（x-list-token）で受け取る。
 
+import { syncCalendarLater } from "@/lib/server/calendar";
 import { isValidToken, readList, updateList } from "@/lib/server/lists";
 import { isTodoOp } from "@/lib/todoOps";
 
@@ -29,7 +30,8 @@ export async function POST(request: Request) {
   if (!isTodoOp(op)) {
     return Response.json({ error: "操作の形が正しくありません" }, { status: 400 });
   }
-  const todos = await updateList(token, op);
-  if (!todos) return notFound();
-  return Response.json({ todos });
+  const result = await updateList(token, op);
+  if (!result) return notFound();
+  syncCalendarLater(token, result.prev, result.next);
+  return Response.json({ todos: result.next });
 }

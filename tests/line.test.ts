@@ -18,6 +18,7 @@ function setup() {
     appUrl: "https://example.com/",
     fetch: fetchMock as unknown as typeof fetch,
     store,
+    today: "2026-10-19",
   };
   // 送った返事の文を取り出す
   const replies = () =>
@@ -66,6 +67,22 @@ describe("handleWebhook", () => {
     expect(todos?.map((t) => t.title)).toEqual(["牛乳", "卵", "パン"]);
     expect(replies()[0]).toContain("3 件追加しました");
     expect(replies()[0]).toContain(`https://example.com/?l=${token}`);
+  });
+
+  it("頭に日付を書くと期限になり、リストが変わったことを知らせる", async () => {
+    const { config, store, replies } = setup();
+    const onListChange = vi.fn();
+    await send({ ...config, onListChange }, textEvent("10/25 歯医者\n1月5日 年賀状\n牛乳"));
+    const token = await getOrCreateLineToken("U1", store);
+    const todos = await readList(token, store);
+    expect(todos?.map((t) => [t.title, t.due])).toEqual([
+      ["歯医者", "2026-10-25"],
+      // 今日より前の日付は来年にする
+      ["年賀状", "2027-01-05"],
+      ["牛乳", undefined],
+    ]);
+    expect(replies()[0]).toContain("・歯医者（期限 10/25（日））");
+    expect(onListChange).toHaveBeenCalledWith(token, [], todos);
   });
 
   it("「一覧」で未完了のものを返す", async () => {

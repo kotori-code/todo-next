@@ -1,5 +1,6 @@
 // LINE Developers の Webhook URL に https://…/api/line/webhook を設定する
 
+import { syncCalendarLater } from "@/lib/server/calendar";
 import { handleWebhook } from "@/lib/server/line";
 
 function appUrl(request: Request): string {
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
     channelSecret,
     accessToken,
     appUrl: appUrl(request),
+    onListChange: syncCalendarLater,
   });
   return new Response(ok ? "OK" : "invalid signature", { status: ok ? 200 : 401 });
 }

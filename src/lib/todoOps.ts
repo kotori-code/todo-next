@@ -1,17 +1,24 @@
 // やることの型と、リストへの操作。ブラウザ（localStorage）とサーバー（LINE 連携）の両方で使う。
 
+import { isDue } from "./due";
+
 export type Todo = {
   id: string;
   title: string;
   done: boolean;
   createdAt: number;
+  // 期限（"2026-10-25"）。なければキーを入れない
+  due?: string;
 };
+
+// 追加するときに送るもの
+export type NewTodo = { title: string; due?: string };
 
 // 削除した項目と元の位置。「元に戻す」で同じ場所に戻す
 export type RemovedItem = { todo: Todo; index: number };
 
 export type TodoOp =
-  | { type: "add"; titles: string[] }
+  | { type: "add"; items: NewTodo[] }
   | { type: "toggle"; id: string }
   | { type: "remove"; ids: string[] }
   | { type: "restore"; items: RemovedItem[] };
@@ -40,7 +47,8 @@ export function isTodo(value: unknown): value is Todo {
     typeof t.id === "string" &&
     typeof t.title === "string" &&
     typeof t.done === "boolean" &&
-    typeof t.createdAt === "number"
+    typeof t.createdAt === "number" &&
+    (t.due === undefined || isDue(t.due))
   );
 }
 
@@ -51,7 +59,10 @@ export function isTodoOp(value: unknown): value is TodoOp {
   const isStrings = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === "string");
   switch (op.type) {
     case "add":
-      return isStrings(op.titles);
+      return (
+        Array.isArray(op.items) &&
+        op.items.every((i) => typeof i?.title === "string" && (i.due === undefined || isDue(i.due)))
+      );
     case "toggle":
       return typeof op.id === "string";
     case "remove":
@@ -69,11 +80,19 @@ export function isTodoOp(value: unknown): value is TodoOp {
 export function applyOp(todos: Todo[], op: TodoOp, now = Date.now()): Todo[] {
   switch (op.type) {
     case "add": {
-      const added = op.titles
-        .map(normalizeTitle)
-        .filter((t): t is string => t !== null)
+      const added = op.items
+        .flatMap(({ title, due }): NewTodo[] => {
+          const normalized = normalizeTitle(title);
+          return normalized ? [{ title: normalized, due }] : [];
+        })
         .slice(0, MAX_ADD)
-        .map((title) => ({ id: newId(), title, done: false, createdAt: now }));
+        .map(({ title, due }): Todo => ({
+          id: newId(),
+          title,
+          done: false,
+          createdAt: now,
+          ...(due && isDue(due) ? { due } : {}),
+        }));
       // 新しいものを上に。送った順に上から並ぶようにする
       return [...added, ...todos];
     }

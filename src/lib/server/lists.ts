@@ -83,16 +83,16 @@ export async function readList(token: string, store = getStore()): Promise<Todo[
   return value.filter(isTodo);
 }
 
-// 最新のリストに操作をあてて保存する。存在しないリストなら null
+// 最新のリストに操作をあてて保存し、変える前と後のリストを返す。存在しないリストなら null
 // （読んでから書くまでの間に別の変更が来ると片方が消えうるが、1 人で使う前提なので許容する）
 export async function updateList(
   token: string,
   op: TodoOp,
   store = getStore(),
-): Promise<Todo[] | null> {
-  const todos = await readList(token, store);
-  if (todos === null) return null;
-  const next = applyOp(todos, op);
+): Promise<{ prev: Todo[]; next: Todo[] } | null> {
+  const prev = await readList(token, store);
+  if (prev === null) return null;
+  const next = applyOp(prev, op);
   await store.set(listKey(token), next);
-  return next;
+  return { prev, next };
 }

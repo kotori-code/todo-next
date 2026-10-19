@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { formatDue, todayInJapan } from "@/lib/due";
 import { getLinkedToken, getServerLinkedToken, subscribeLinkedToken } from "@/lib/linkedToken";
 import { collectRemoved, MAX_TITLE, type RemovedItem, type Todo } from "@/lib/todoOps";
 import { useTodoList } from "@/lib/useTodoList";
@@ -31,11 +32,15 @@ export default function TodoApp({ lineAddUrl }: Props) {
   const token = urlToken ?? savedToken;
   const { todos, error, apply, reload } = useTodoList(token);
   const [title, setTitle] = useState("");
+  const [due, setDue] = useState("");
+  // 完了にした直後のやること。チェックを光らせる
+  const [glowId, setGlowId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [removed, setRemoved] = useState<Removed | null>(null);
   const [announce, setAnnounce] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
+  const dueId = useId();
 
   // 「元に戻す」は一定時間で消す
   useEffect(() => {
@@ -64,9 +69,10 @@ export default function TodoApp({ lineAddUrl }: Props) {
   function add(e: React.FormEvent) {
     e.preventDefault();
     if (!trimmed) return;
-    apply({ type: "add", titles: [trimmed] });
+    apply({ type: "add", items: [{ title: trimmed, ...(due ? { due } : {}) }] });
     setTitle("");
-    setAnnounce(`「${trimmed}」を追加しました`);
+    setDue("");
+    setAnnounce(`「${trimmed}」を追加しました${due ? `（期限 ${formatDue(due)}）` : ""}`);
     // 続けて入力できるように入力欄に戻す
     inputRef.current?.focus();
     // 追加したものが見えるように、完了の絞り込み中なら外す
@@ -77,6 +83,7 @@ export default function TodoApp({ lineAddUrl }: Props) {
     const target = todos!.find((t) => t.id === id);
     if (!target) return;
     apply({ type: "toggle", id });
+    setGlowId(target.done ? null : id);
     setAnnounce(`「${target.title}」を${target.done ? "未完了に戻しました" : "完了にしました"}`);
   }
 
@@ -125,6 +132,18 @@ export default function TodoApp({ lineAddUrl }: Props) {
         <p className="text-sm text-slate-600 dark:text-slate-300">
           Enter キーでも追加できます（{title.length}/{MAX_TITLE} 文字）
         </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <label htmlFor={dueId} className="text-base font-semibold">
+            期限<span className="font-normal text-slate-600 dark:text-slate-300">（なくてもよい）</span>
+          </label>
+          <input
+            id={dueId}
+            type="date"
+            value={due}
+            onChange={(e) => setDue(e.target.value)}
+            className="min-h-11 rounded-lg border-2 border-slate-400 bg-white px-3 text-base text-slate-900 focus:border-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200 dark:border-slate-500 dark:bg-slate-900 dark:text-slate-50 dark:focus:border-blue-400 dark:focus:ring-blue-900"
+          />
+        </div>
       </form>
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
@@ -162,24 +181,39 @@ export default function TodoApp({ lineAddUrl }: Props) {
       {visible.length === 0 ? (
         <EmptyState filter={filter} total={todos.length} />
       ) : (
-        <ul className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900">
+        <ul className="mt-4 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-300 bg-white dark:divide-slate-700 dark:border-slate-700 dark:bg-slate-900">
           {visible.map((todo) => (
-            <li key={todo.id} className="flex items-center gap-2 px-2">
-              <label className="flex min-h-14 flex-1 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
-                <input
-                  type="checkbox"
-                  checked={todo.done}
-                  onChange={() => toggle(todo.id)}
-                  className="size-6 shrink-0 cursor-pointer accent-blue-700"
-                />
+            <li
+              key={todo.id}
+              className={`flex items-center gap-2 px-2 ${todo.done ? "bg-slate-200 dark:bg-slate-800" : ""}`}
+            >
+              <label
+                className={`flex min-h-14 flex-1 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 ${
+                  todo.done ? "hover:bg-slate-300 dark:hover:bg-slate-700" : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                }`}
+              >
                 <span
-                  className={`break-words text-lg [overflow-wrap:anywhere] ${
-                    todo.done
-                      ? "text-slate-500 line-through dark:text-slate-400"
-                      : "text-slate-900 dark:text-slate-50"
-                  }`}
+                  className={`grid shrink-0 place-items-center rounded-md ${glowId === todo.id ? "check-glow" : ""}`}
+                  onAnimationEnd={() => setGlowId(null)}
                 >
-                  {todo.title}
+                  <input
+                    type="checkbox"
+                    checked={todo.done}
+                    onChange={() => toggle(todo.id)}
+                    className={`size-6 cursor-pointer ${todo.done ? "accent-slate-500" : "accent-blue-700"}`}
+                  />
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span
+                    className={`break-words text-lg [overflow-wrap:anywhere] ${
+                      todo.done
+                        ? "text-slate-500 line-through dark:text-slate-400"
+                        : "text-slate-900 dark:text-slate-50"
+                    }`}
+                  >
+                    {todo.title}
+                  </span>
+                  {todo.due && <DueLabel due={todo.due} done={todo.done} />}
                 </span>
               </label>
               <button
@@ -273,6 +307,24 @@ function Shell({ token, lineAddUrl, error, onReload, children }: ShellProps) {
       )}
       {children}
     </main>
+  );
+}
+
+function DueLabel({ due, done }: { due: string; done: boolean }) {
+  const overdue = !done && due < todayInJapan();
+  return (
+    <span
+      className={`text-sm ${
+        done
+          ? "text-slate-500 dark:text-slate-400"
+          : overdue
+            ? "font-semibold text-red-800 dark:text-red-300"
+            : "text-slate-600 dark:text-slate-300"
+      }`}
+    >
+      期限 {formatDue(due)}
+      {overdue && "・過ぎています"}
+    </span>
   );
 }
 

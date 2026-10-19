@@ -24,3 +24,30 @@ body {
   font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
   line-height: 1.6;
 }
+
+/* 完了にしたときにチェックを光らせる */
+@keyframes check-glow {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(250 204 21 / 0.9);
+  }
+  40% {
+    transform: scale(1.35);
+    box-shadow: 0 0 14px 6px rgb(250 204 21 / 0.75);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 14px rgb(250 204 21 / 0);
+  }
+}
+
+.check-glow {
+  animation: check-glow 0.7s ease-out;
+}
+
+/* 動きを減らす設定の端末では光らせない */
+@media (prefers-reduced-motion: reduce) {
+  .check-glow {
+    animation: none;
+  }
+}
